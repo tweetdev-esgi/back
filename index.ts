@@ -11,7 +11,7 @@ import { HubController } from './controller/hub.controller'
 
 const cors = require('cors');
 import * as dotenv from "dotenv";
-dotenv.config({ path:'../.env' });
+dotenv.config({ path:'.env' });
 
 const startServer = async (): Promise<void> => {
 
