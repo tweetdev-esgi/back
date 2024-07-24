@@ -15,9 +15,9 @@ dotenv.config({ path:'.env' });
 
 const startServer = async (): Promise<void> => {
 
-    const connection = await mongoose.connect("mongodb+srv://admin:ZyVGyEBReoTozN8T@tweetdevcluster.j5crcad.mongodb.net/?retryWrites=true&w=majority&appName=TweetDevCluster", {auth: {
-            username: "admin",
-            password: "ZyVGyEBReoTozN8T"
+    const connection = await mongoose.connect(process.env.MONGODB_URI as string, {auth: {
+            username: process.env.MONGODB_USER as string,
+            password: process.env.MONGODB_PASSWORD as string
         },
         authSource: "admin"
     })
@@ -27,7 +27,7 @@ const startServer = async (): Promise<void> => {
     
     const app = express()
     const corsOptions = {
-        origin: 'http://localhost:4000', 
+        origin: 'https://tweetdev-front-2be782a7954b.herokuapp.com', 
     };
     app.use(cors(corsOptions));
   
