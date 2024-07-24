@@ -15,9 +15,9 @@ dotenv.config({ path:'.env' });
 
 const startServer = async (): Promise<void> => {
 
-    const connection = await mongoose.connect(process.env.MONGODB_URI as string, {auth: {
-            username: process.env.MONGODB_USER as string,
-            password: process.env.MONGODB_PASSWORD as string
+    const connection = await mongoose.connect("mongodb+srv://admin:ZyVGyEBReoTozN8T@tweetdevcluster.j5crcad.mongodb.net/?retryWrites=true&w=majority&appName=TweetDevCluster", {auth: {
+            username: "admin",
+            password: "ZyVGyEBReoTozN8T"
         },
         authSource: "admin"
     })
