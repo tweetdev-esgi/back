@@ -12,7 +12,7 @@ import { HubController } from './controller/hub.controller'
 const cors = require('cors');
 import * as dotenv from "dotenv";
 dotenv.config({ path:'.env' });
-
+const FRONT_URL = process.env.FRONT_BASE_URL;
 const startServer = async (): Promise<void> => {
 
     const connection = await mongoose.connect(process.env.MONGODB_URI as string, {auth: {
@@ -22,12 +22,11 @@ const startServer = async (): Promise<void> => {
         authSource: "admin"
     })
 
-
     await StartService.userRoles()
     
     const app = express()
     const corsOptions = {
-        origin: 'https://tweetdev-front-2be782a7954b.herokuapp.com', 
+        origin: FRONT_URL, 
     };
     app.use(cors(corsOptions));
   
