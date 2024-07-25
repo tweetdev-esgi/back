@@ -28,40 +28,6 @@ const workflowSample2={
         },
         {
             "id": "2",
-            "type": "upload-node",
-            "data": {
-                "label": "Upload"
-            },
-            "position": {
-                "x": 200,
-                "y": 0
-            },
-            "width": 90,
-            "height": 90,
-            "positionAbsolute": {
-                "x": 200,
-                "y": 0
-            }
-        },
-        {
-            "id": "3",
-            "type": "code-node",
-            "data": {
-                "label": "Code"
-            },
-            "position": {
-                "x": 400,
-                "y": 0
-            },
-            "width": 90,
-            "height": 90,
-            "positionAbsolute": {
-                "x": 400,
-                "y": 0
-            }
-        },
-        {
-            "id": "4",
             "type": "finish-node",
             "data": {
                 "label": "Finish"
@@ -112,7 +78,7 @@ export class WorkflowController {
             creationDate: new Date(),
             versions : [{
                 name:"1.0",
-                content: workflowSample,
+                content: workflowSample2,
                 creationDate: new Date()
             }]
         })
