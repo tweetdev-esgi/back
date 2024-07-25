@@ -7,6 +7,7 @@ import { checkBody, checkUserRole, checkUserToken } from "../middleware"
 import { checkQuery } from "../middleware/query.middleware"
 import { RolesEnums } from "../enums"
 
+const tar = require('tar-stream');
 const path = require('path');
 const fs = require('fs')
 const Docker = require('dockerode')
@@ -33,7 +34,18 @@ const LANGUAGES: { [key: string]: LanguageConfig } = {
         cmd: (filePath: string) => ['node', filePath]
     }
 };
-
+const getMimeType = (fileExtension: string | number) => {
+    const mimeTypes: { [key: string]: string } = {
+        'txt': 'text/plain',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'py': 'text/x-python',
+        'js': 'application/javascript',
+        'pdf': 'application/pdf',  // Ajouter des types MIME supplémentaires si nécessaire
+        'zip': 'application/zip'
+    };
+    return mimeTypes[fileExtension] || 'application/octet-stream'; // Retourne 'application/octet-stream' par défaut
+};
 function writeCodeToFile(code: string, filePath: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
         // Ensure the directory exists
@@ -303,19 +315,22 @@ executeProgram = async (req: Request, res: Response): Promise<void> => {
         // Vérifiez si outputFileType est spécifié
         if (outputFileType !== "void") {
             try {
+                // Attendre que le conteneur s'arrête
+                await container.wait();
+                
                 const fileName = "output." + outputFileType;
                 const containerPath = `/app/${fileName}`; // Chemin du fichier dans le conteneur
 
                 // Obtenir le fichier depuis le conteneur
                 const stream = await container.getArchive({ path: containerPath });
+                const extract = tar.extract();
 
-                // Envoyer le fichier en streaming à l'utilisateur
-                res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
-                res.setHeader('Content-Type', 'application/octet-stream');
-
-                // Pipe le flux de données vers la réponse HTTP
-                stream.pipe(res);
-
+                extract.on('entry', (header: any, stream: { pipe: (arg0: express.Response<any, Record<string, any>>) => void; on: (arg0: string, arg1: any) => void; }, next: any) => {
+                    stream.pipe(res);
+                    stream.on('end', next);
+                });
+        
+                stream.pipe(extract);
 
                 stream.on('error', async (err: any) => {
                     console.error('Erreur lors de l\'envoi du fichier:', err);

@@ -21,26 +21,28 @@ export class HubController {
         res.status(200).json(hubs)
         return 
     }
+getHubByName = async (req: Request, res: Response): Promise<void> => {
+    const name = req.query.name as string;
 
-    getHubByName = async (req:Request, res:Response): Promise<void> => {
-        const name = req.query.name as string;
+    if (!name) {
+        res.status(400).json({ message: 'Name query parameter is required' });
+        return;
+    }
 
-        try {
-            const hub = await HubModel.findOne({ name });
-    
-            if (!hub) {
-                res.status(404).json({ message: 'Hub not found' });
-                return;
-            }
-    
-    
-            res.status(200).json(hub);
-        } catch (error) {
-            console.error('Error retrieving hub:', error);
-            res.status(500).json({ message: 'Internal server error' });
+    try {
+        const hub = await HubModel.findOne({ name }).lean().exec(); // Using lean() to return plain JavaScript objects
+
+        if (!hub) {
+            res.status(404).json({ message: 'Hub not found' });
+            return;
         }
-    };
 
+        res.status(200).json(hub);
+    } catch (error) {
+        console.error('Error retrieving hub:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
     isAdmin = async (req:Request, res:Response): Promise<void> => {
         const name = req.query.name as string;
 
