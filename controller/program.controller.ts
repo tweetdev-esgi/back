@@ -50,6 +50,12 @@ function writeCodeToFile(code: string, filePath: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
         // Ensure the directory exists
         const dir = path.dirname(filePath);
+        
+        // Create the directory if it does not exist
+        fs.mkdir(dir, { recursive: true }, (err: any) => {
+            if (err) {
+                return reject(err);
+            }
 
             // Write the file
             fs.writeFile(filePath, code, (err: any) => {
@@ -59,6 +65,7 @@ function writeCodeToFile(code: string, filePath: string): Promise<void> {
                     resolve();
                 }
             });
+        });
     });
 }
 function deleteFile(filePath: string): Promise<void> {
@@ -301,7 +308,9 @@ executeProgram = async (req: Request, res: Response): Promise<void> => {
             Tty: true,
             HostConfig: {
                 Binds: binds
-            }
+            },
+            AttachStdout: true,
+            AttachStderr: true
         });
         await container.start();
 
@@ -353,6 +362,112 @@ executeProgram = async (req: Request, res: Response): Promise<void> => {
                 // Nettoyage des fichiers après l'envoi de la réponse
             });
         }
+    } catch (error) {   
+        console.error('Erreur:', error);
+        res.status(500).send('An error occurred while fetching the logs.');
+        // Nettoyage des fichiers en cas d'erreur
+        await this.cleanupFiles(hostCodeFilePath, hostFilePath);
+    }
+};
+
+executePipeline = async (req: Request, res: Response): Promise<void> => {
+    const { language, code, outputFileType } = req.body;
+    const file = req.file as Express.Multer.File | undefined;
+
+    // Vérifiez que le langage est pris en charge
+    const langConfig = LANGUAGES[language as string];
+    if (!langConfig) {
+        res.status(400).send('Unsupported language');
+        return;
+    }
+
+    const containerName = `code-exec-container-pipeline`;
+    const codeFileName = `script.${langConfig.extension}`;
+    const hostCodeFilePath = path.join(__dirname, codeFileName);
+    const containerCodeFilePath = `/app/${codeFileName}`;
+    const hostFilePath = file ? path.join(__dirname, 'uploads', file.filename) : undefined;
+    const containerFilePath = file ? `/app/${file.originalname}` : undefined;
+
+    try {
+        // Écrire le code dans un fichier sur l'hôte
+        await writeCodeToFile(code as string, hostCodeFilePath);
+
+        // Vérifiez si le conteneur est déjà en cours d'exécution
+        let container = docker.getContainer(containerName);
+        const containerInfo = await container.inspect().catch(() => null);
+
+        if (!containerInfo) {
+            // Créez et démarrez le conteneur avec les fichiers montés
+            const binds = [`${hostCodeFilePath}:${containerCodeFilePath}`];
+            if (file) {
+                binds.push(`${hostFilePath}:${containerFilePath}`);
+            }
+
+            container = await docker.createContainer({
+                Image: langConfig.image,
+                Cmd: ["/bin/sh", "-c", `${langConfig.cmd(containerCodeFilePath)} && tail -f /dev/null`],
+                name: containerName,
+                Tty: true,
+                HostConfig: {
+                    Binds: binds
+                },
+                AttachStdout: true,
+                AttachStderr: true
+            });
+            await container.start();
+        } else {
+            // Redémarrez le conteneur s'il existe
+            await container.restart();
+        }
+
+        // Obtenez les logs du conteneur
+        const logs = await container.logs({
+            stdout: true,
+            stderr: true,
+            follow: true
+        });
+
+        // Vérifiez si outputFileType est spécifié
+        if (outputFileType !== "void") {
+            try {
+                // Attendre que le conteneur s'arrête
+                await container.wait();
+
+                const fileName = "output." + outputFileType;
+                const containerPath = `/app/${fileName}`; // Chemin du fichier dans le conteneur
+
+                // Obtenir le fichier depuis le conteneur
+                const stream = await container.getArchive({ path: containerPath });
+                const extract = tar.extract();
+
+                extract.on('entry', (header: any, stream: { pipe: (arg0: express.Response<any, Record<string, any>>) => void; on: (arg0: string, arg1: any) => void; }, next: any) => {
+                    stream.pipe(res);
+                    stream.on('end', next);
+                });
+
+                stream.pipe(extract);
+
+                stream.on('error', async (err: any) => {
+                    console.error('Erreur lors de l\'envoi du fichier:', err);
+                    res.status(500).send('Erreur lors de l\'envoi du fichier.');
+                    // Nettoyage des fichiers en cas d'erreur
+                });
+            } catch (error) {
+                console.error('Erreur lors de la récupération du fichier depuis le conteneur:', error);
+                res.status(500).send('Erreur lors de la récupération du fichier.');
+                // Nettoyage des fichiers en cas d'erreur
+            }
+        } else {
+            // Si outputFileType n'est pas spécifié, envoyez les logs en réponse
+            res.set('Content-Type', 'text/plain');
+            logs.on('data', (chunk: Buffer) => {
+                res.write(chunk.toString());
+            });
+            logs.on('end', async () => {
+                res.end();
+                // Nettoyage des fichiers après l'envoi de la réponse
+            });
+        }
     } catch (error) {
         console.error('Erreur:', error);
         res.status(500).send('An error occurred while fetching the logs.');
@@ -377,6 +492,8 @@ executeProgram = async (req: Request, res: Response): Promise<void> => {
         router.put('/', express.json(), checkUserToken(), checkUserRole(RolesEnums.guest), checkBody(this.paramsUpdateProgram), this.updateProgram.bind(this))
         router.delete('/', checkUserToken(), checkUserRole(RolesEnums.guest), this.deleteProgram.bind(this))
         router.post('/execute', express.json(), checkUserToken(), checkUserRole(RolesEnums.guest), upload.single('file'), this.executeProgram.bind(this))
+        router.post('/pipeline/execute', express.json(), checkUserToken(), checkUserRole(RolesEnums.guest), upload.single('file'), this.executePipeline.bind(this))
+
         return router
     }
 }
