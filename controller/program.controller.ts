@@ -481,10 +481,37 @@ executePipeline = async (req: Request, res: Response): Promise<void> => {
         res.download(filePath);
     }
 
+ getProgramsByUsernameOrSelf = async (req: Request, res: Response): Promise<void> => {
+        const queryUsername = req.query.username as string;
+        const selfUsername = req.user?.username;
+    
+        // Vérifiez si un username a été fourni ou utilisez le username de l'utilisateur connecté
+        const usernameToSearch = queryUsername || selfUsername;
+    
+        if (!usernameToSearch) {
+            res.status(400).json({ message: 'No username provided and user is not logged in' });
+            return;
+        }
+    
+        try {
+            const programs = await ProgramModel.find({ username: usernameToSearch });
+    
+            if (programs.length > 0) {
+                res.status(200).json(programs);
+            } else {
+                res.status(404).json({ message: 'No programs found for the user' });
+            }
+        } catch (error) {
+            console.error('Error retrieving programs:', error);
+            res.status(500).json({ message: 'Internal server error' });
+        }
+    };
+    
     buildRouter = (): Router => {
         const router = express.Router()
         router.get('/', checkUserToken(), this.getAllPrograms.bind(this))
         router.get('/one', checkUserToken(), this.getOneProgram.bind(this))
+        router.get('/user', checkUserToken(), this.getProgramsByUsernameOrSelf.bind(this))
 
         router.get('/download',  this.download.bind(this))
         router.get('/is-deletable', checkUserToken(), this.isProgramDeletable.bind(this))
