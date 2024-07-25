@@ -26,7 +26,7 @@ const startServer = async (): Promise<void> => {
     
     const app = express()
     const corsOptions = {
-        origin: FRONT_URL, 
+        origin: [FRONT_URL, 'https://tweetdev-front-2be782a7954b.herokuapp.com'],
     };
     app.use(cors(corsOptions));
   
