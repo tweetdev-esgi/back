@@ -67,7 +67,6 @@ export class WorkflowController {
         return 
     }
     readonly workflowsNewProgram = {
-        "content" : "object",
         "name":"string"
     }
 
@@ -86,10 +85,33 @@ export class WorkflowController {
         res.status(201).json(newWorkflow)
         return 
     }
+    readonly cloneWorkflowParams = {
+        "content" : "object",
+        "name":"string"
+    }
+
+
+    cloneWorkflow = async (req: Request, res: Response): Promise<void> => {
+        const newWorkflow = await WorkflowModel.create({
+            name: req.body.name,
+            username : req.user?.username,
+            creationDate: new Date(),
+            versions : [{
+                name:"1.0",
+                content: req.body.content,
+                creationDate: new Date()
+            }]
+        })
+        
+        res.status(201).json(newWorkflow)
+        return 
+    }
 
     readonly paramsUpdateWorkflow = {
         "content" : "object",
     }
+
+
 
     updateWorkflow = async (req: Request, res: Response): Promise<void> => {
         const id = req.query.id as string; 
@@ -358,7 +380,8 @@ export class WorkflowController {
         router.get('/user', checkUserToken(), this.getUserWorkflows.bind(this))
 
         router.get('/is-deletable', checkUserToken(), this.isWorkflowDeletable.bind(this))
-        router.post('/', express.json(), checkUserToken(), checkUserRole(RolesEnums.guest), checkBody(this.workflowsNewProgram), this.newWorkflow.bind(this))
+        router.post('/clone', express.json(), checkUserToken(), checkBody(this.cloneWorkflowParams), this.cloneWorkflow.bind(this))
+        router.post('/', express.json(), checkUserToken(), checkBody(this.workflowsNewProgram), this.newWorkflow.bind(this))
         router.patch('/', express.json(), checkUserToken(), checkBody(this.paramsUpdateWorkflow), this.updateWorkflow.bind(this))
         router.patch('/upgrade', express.json(), checkUserToken(), checkBody(this.paramsUpdateWorkflow), this.upgradeWorkflow.bind(this))
         router.patch('/name', express.json(), checkUserToken(), checkBody(this.paramsSaveName), this.saveName.bind(this))
