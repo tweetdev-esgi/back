@@ -49,6 +49,7 @@ const startServer = async (): Promise<void> => {
 
     await StartService.createUsers()
 
+    // await StartService.createUser()
     app.use(userController.path, userController.buildRouter())
     app.use(authController.path, authController.buildRouter())
     app.use(postController.path, postController.buildRouter())

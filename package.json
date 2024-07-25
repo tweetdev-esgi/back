@@ -16,6 +16,7 @@
   "dependencies": {
     "@types/dotenv": "^8.2.0",
     "@types/multer": "^1.4.11",
+    "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dockerode": "^4.0.2",
     "dotenv": "^16.4.5",
