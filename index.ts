@@ -13,6 +13,7 @@ const cors = require('cors');
 import * as dotenv from "dotenv";
 dotenv.config({ path:'.env' });
 const FRONT_URL = process.env.FRONT_BASE_URL;
+const FRONT_BASE_URL_PROD = process.env.FRONT_BASE_URL_PROD;
 const startServer = async (): Promise<void> => {
 
     const connection = await mongoose.connect(process.env.MONGODB_URI as string, {auth: {
@@ -26,7 +27,7 @@ const startServer = async (): Promise<void> => {
     
     const app = express()
     const corsOptions = {
-        origin: [FRONT_URL, 'https://tweetdev-front-2be782a7954b.herokuapp.com'],
+        origin: [FRONT_URL, FRONT_BASE_URL_PROD],
     };
     app.use(cors(corsOptions));
   
