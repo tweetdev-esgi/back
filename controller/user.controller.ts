@@ -882,7 +882,7 @@ deleteUsernameInComments = async (username: string) => {
       }
   };
     buildRouter = (): Router => {
-        
+         
         const router = express.Router()
         router.post('/get-users-by-ids', express.json(), this.getUsersByIds.bind(this)); 
         router.post(`/subscribe`, express.json(), checkBody(this.paramsLogin), this.subscribe.bind(this))
