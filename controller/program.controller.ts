@@ -381,44 +381,42 @@ executePipeline = async (req: Request, res: Response): Promise<void> => {
         return;
     }
 
-    const containerName = `code-exec-container-pipeline`;
+    const containerName = `code-exec-container-${language}`;
     const codeFileName = `script.${langConfig.extension}`;
-    const hostCodeFilePath = path.join(__dirname, codeFileName);
-    const containerCodeFilePath = `/app/${codeFileName}`;
-    const hostFilePath = file ? path.join(__dirname, 'uploads', file.filename) : undefined;
-    const containerFilePath = file ? `/app/${file.originalname}` : undefined;
+    const volumeName = `code_exec_volume_${language}`;
 
     try {
-        // Écrire le code dans un fichier sur l'hôte
-        await writeCodeToFile(code as string, hostCodeFilePath);
+        
+        // Créez un volume Docker pour le code
+        const volume = await docker.createVolume({ Name: volumeName });
 
-        // Vérifiez si le conteneur est déjà en cours d'exécution
-        let container = docker.getContainer(containerName);
-        const containerInfo = await container.inspect().catch(() => null);
+        // Chemins pour les fichiers dans le volume
+        const containerCodeFilePath = `/app/${codeFileName}`;
+        const containerFilePath = file ? `/app/${file.originalname}` : undefined;
 
-        if (!containerInfo) {
-            // Créez et démarrez le conteneur avec les fichiers montés
-            const binds = [`${hostCodeFilePath}:${containerCodeFilePath}`];
-            if (file) {
-                binds.push(`${hostFilePath}:${containerFilePath}`);
-            }
-
-            container = await docker.createContainer({
-                Image: langConfig.image,
-                Cmd: ["/bin/sh", "-c", `${langConfig.cmd(containerCodeFilePath)} && tail -f /dev/null`],
-                name: containerName,
-                Tty: true,
-                HostConfig: {
-                    Binds: binds
-                },
-                AttachStdout: true,
-                AttachStderr: true
-            });
-            await container.start();
-        } else {
-            // Redémarrez le conteneur s'il existe
-            await container.restart();
+        // Créez et démarrez le conteneur avec les volumes montés
+        const binds = [`${volumeName}:/app`];
+        if (file) {
+            const hostFilePath = path.join(__dirname, 'uploads', file.filename);
+            await writeCodeToFile(code as string, hostFilePath); // Écrire le fichier d'entrée sur l'hôte pour le monter
+            binds.push(`${hostFilePath}:${containerFilePath}`);
         }
+
+        const container = await docker.createContainer({
+            Image: langConfig.image,
+            Cmd: langConfig.cmd(containerCodeFilePath),
+            name: containerName,
+            Tty: true,
+            HostConfig: {
+                Binds: binds
+            },
+            AttachStdout: true,
+            AttachStderr: true
+        });
+        await container.start();
+
+        // Écrire le code dans le volume
+        await writeCodeToFile(code as string, `/var/lib/docker/volumes/${volumeName}/_data/${codeFileName}`);
 
         // Obtenez les logs du conteneur
         const logs = await container.logs({
@@ -432,7 +430,7 @@ executePipeline = async (req: Request, res: Response): Promise<void> => {
             try {
                 // Attendre que le conteneur s'arrête
                 await container.wait();
-
+                
                 const fileName = "output." + outputFileType;
                 const containerPath = `/app/${fileName}`; // Chemin du fichier dans le conteneur
 
@@ -444,7 +442,7 @@ executePipeline = async (req: Request, res: Response): Promise<void> => {
                     stream.pipe(res);
                     stream.on('end', next);
                 });
-
+        
                 stream.pipe(extract);
 
                 stream.on('error', async (err: any) => {
@@ -468,13 +466,258 @@ executePipeline = async (req: Request, res: Response): Promise<void> => {
                 // Nettoyage des fichiers après l'envoi de la réponse
             });
         }
-    } catch (error) {
+    } catch (error) {   
         console.error('Erreur:', error);
         res.status(500).send('An error occurred while fetching the logs.');
         // Nettoyage des fichiers en cas d'erreur
-        await this.cleanupFiles(hostCodeFilePath, hostFilePath);
     }
 };
+
+testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
+    const { language, code, outputFileType } = req.body;
+    const file = req.file as Express.Multer.File | undefined;
+
+    // Vérifiez que le langage est pris en charge
+    const langConfig = LANGUAGES[language as string];
+    if (!langConfig) {
+        res.status(400).send('Unsupported language');
+        return;
+    }
+
+    const containerName = `code-exec-container-${language}-${Date.now()}`;
+    const codeFileName = `script.${langConfig.extension}`;
+    const hostCodeFilePath = path.join(__dirname, codeFileName); // Local file path
+    const containerCodeFilePath = `/app/${codeFileName}`; // Temp path for the code file in container
+    const volumeMountPath = `/data/${codeFileName}`; // Final path in the Docker volume
+
+    try {
+        
+        // Écrire le code dans un fichier local
+        await writeCodeToFile(code as string, hostCodeFilePath);
+
+        // Vérifiez si le conteneur est déjà en cours d'exécution
+        let container = docker.getContainer(containerName);
+        const containerInfo = await container.inspect().catch(() => null);
+
+        // Étape 2: Créer un volume Docker
+        const volume = await docker.createVolume({
+            Name: 'my_volume',
+        });
+        console.log(`Volume créé : ${volume.name}`);
+
+        if (containerInfo) {
+            try {
+                await container.stop(); // Stop the container
+                await container.remove(); // Remove the container
+            } catch (error) {
+                console.error(`Error stopping/removing container: ${error.message}`);
+            }
+        }
+        // Étape 3: Créer et démarrer un conteneur pour copier le fichier dans le volume
+        container = await docker.createContainer({
+            Image: langConfig.image,
+            name: containerName,
+            Tty: true,
+            HostConfig: {
+                Binds: [`${hostCodeFilePath}:${containerCodeFilePath}`, `my_volume:/data`], // Monte le fichier et le volume
+            },
+        });
+
+        console.log('Conteneur créé avec succès');
+
+        // Étape 4: Démarrer le conteneur
+        await container.start();
+        console.log('Conteneur démarré');
+        // Étape 6: Exécuter le script dans le volume
+        const execRun = await container.exec({
+            Cmd: langConfig.cmd(containerCodeFilePath), // Exécuter le script depuis le volume
+            AttachStdout: true,
+            AttachStderr: true,
+        });
+  
+
+        const streamRun = await execRun.start();
+        let logs = '';
+
+        streamRun.on('data', (data) => {
+            logs += data.toString(); // Accumule les logs
+        });
+
+     
+
+        // Vérifier si un fichier de sortie est spécifié
+        if (outputFileType && outputFileType !== 'void') {
+            try {
+                const fileName = `output.${outputFileType}`;
+                const containerPath = `/data/${fileName}`;
+                
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Ajuster le timing si nécessaire
+            
+                // Obtenir le fichier depuis le conteneur
+                const stream = await container.getArchive({ path: containerPath });
+            
+                // Extraire le fichier .tar et envoyer son contenu comme réponse
+                const extract = tar.extract();
+            
+                // Gérer les événements d'extraction
+                extract.on('entry', (header, streamEntry, next) => {
+                    streamEntry.pipe(res); // Envoie le contenu du fichier dans la réponse
+                    streamEntry.on('end', next);
+                });
+            
+                extract.on('finish', () => {
+                    console.log('Extraction terminée avec succès.');
+                    res.end(); // Terminer la réponse après l'extraction
+                });
+            
+                stream.pipe(extract);
+            
+                // Gérer les erreurs
+                stream.on('error', (err) => {
+                    console.error('Erreur lors de l\'extraction du fichier:', err);
+                    res.status(500).send('Erreur lors de l\'extraction du fichier.');
+                });
+            
+                extract.on('error', (err) => {
+                    console.error('Erreur lors de l\'extraction du fichier:', err);
+                    res.status(500).send('Erreur lors de l\'extraction du fichier.');
+                });
+            
+            } catch (error) {
+                console.error('Erreur lors de la récupération du fichier depuis le conteneur:', error);
+                res.status(500).send('Erreur lors de la récupération du fichier.');
+            }
+            
+        } else {
+            // Si aucun fichier de sortie n'est spécifié, envoyer les logs en réponse
+            res.set('Content-Type', 'text/plain');
+            res.write(logs); // Envoyer les logs accumulés
+            res.end();
+        }
+
+        // Nettoyage : arrêter et supprimer le conteneur
+        await container.stop();
+        await container.remove();
+        console.log('Conteneur arrêté et supprimé');
+
+    } catch (error) {
+        console.error('Erreur:', error);
+        res.status(500).send('An error occurred while fetching the logs.');
+    }
+};
+
+
+executePipelineTest = async (req: Request, res: Response): Promise<void> => {
+    const { language, code, outputFileType } = req.body;
+    const file = req.file as Express.Multer.File | undefined;
+
+    // Check if the language is supported
+    const langConfig = LANGUAGES[language as string];
+    if (!langConfig) {
+        res.status(400).send('Unsupported language');
+        return;
+    }
+
+    const containerName = `code-exec-container-${language}`;
+    const codeFileName = `script.${langConfig.extension}`;
+    const volumeName = `code_exec_volume_${language}`;
+
+    try {
+              // Vérifiez si le conteneur est déjà en cours d'exécution
+              let container = docker.getContainer(containerName);
+              const containerInfo = await container.inspect().catch(() => null);
+      
+              if (containerInfo) {
+                  // Arrêter et supprimer le conteneur s'il existe
+                  await container.stop().catch(() => null);
+                  await container.remove();
+              }
+        // Step 1: Create a Docker volume for the code
+        const volume = await docker.createVolume({ Name: volumeName });
+
+        // Paths for files in the container
+        const containerCodeFilePath = `/app/${codeFileName}`;
+        const containerFilePath = file ? `/app/${file.originalname}` : undefined;
+
+        // Write code to the volume
+        const hostCodeFilePath = path.join('/tmp', codeFileName);  // Use /tmp or another accessible directory
+        await writeCodeToFile(code as string, hostCodeFilePath);
+
+        const binds = [`code_exec_volume:/app`];
+        if (file) {
+            const hostFilePath = path.join(__dirname, 'uploads', file.filename);
+            binds.push(`${hostFilePath}:${containerFilePath}`);
+        }
+        
+         container = await docker.createContainer({
+            Image: langConfig.image,
+            Cmd: langConfig.cmd(containerCodeFilePath),
+            name: containerName,
+            Tty: true,
+            HostConfig: { 
+                Binds: binds // Use binds array here
+            },
+            AttachStdout: true,
+            AttachStderr: true
+        });
+        
+        await container.start();
+// const containerExec = await container.exec({
+//     Cmd: ['ls', '/app/'],
+//     AttachStdout: true,
+//     AttachStderr: true
+// });
+
+// const output = await containerExec.start({ Detach: false });
+// console.log(output); // Logs the contents of /app/ to check if the file exists
+
+        // Get logs from the container
+        const logs = await container.logs({ stdout: true, stderr: true, follow: true });
+
+        // Check if outputFileType is specified
+        if (outputFileType !== "void") {
+            try {
+                await container.wait(); // Wait for container to finish
+                const fileName = `output.${outputFileType}`;
+                const containerPath = `/app/${fileName}`; // Path to output file in the container
+
+                // Get the output file from the container
+                const stream = await container.getArchive({ path: containerPath });
+                const extract = tar.extract();
+
+                extract.on('entry', (header: any, stream: any, next: any) => {
+                    stream.pipe(res); // Send the file to the client
+                    stream.on('end', next);
+                });
+
+                stream.pipe(extract);
+                stream.on('error', (err: any) => {
+                    console.error('Error sending file:', err);
+                    res.status(500).send('Error sending file.');
+                });
+            } catch (error) {
+                console.error('Error retrieving file:', error);
+                res.status(500).send('Error retrieving file.');
+            }
+        } else {
+            // If no output file type, send the logs
+            res.set('Content-Type', 'text/plain');
+            logs.on('data', (chunk: Buffer) => {
+                res.write(chunk.toString());
+            });
+            logs.on('end', async () => {
+                res.end();
+            });
+        }
+
+        // Clean up files after execution
+        await container.remove();
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).send('An error occurred during execution.');
+    }
+};
+
 
     download = async (req: Request, res: Response): Promise<void> => {
         const filePath = path.join(__dirname, 'file.txt'); // chemin vers votre fichier
@@ -518,8 +761,9 @@ executePipeline = async (req: Request, res: Response): Promise<void> => {
         router.post('/', express.json(), checkUserToken(), checkUserRole(RolesEnums.guest), checkBody(this.paramsNewProgram), this.newProgram.bind(this))
         router.put('/', express.json(), checkUserToken(), checkUserRole(RolesEnums.guest), checkBody(this.paramsUpdateProgram), this.updateProgram.bind(this))
         router.delete('/', checkUserToken(), checkUserRole(RolesEnums.guest), this.deleteProgram.bind(this))
-        router.post('/execute', express.json(), checkUserToken(),  upload.single('file'), this.executeProgram.bind(this))
+        router.post('/execute', express.json(), checkUserToken(),  upload.single('file'), this.testExecutePipeline.bind(this))
         router.post('/pipeline/execute', express.json(), checkUserToken(), upload.single('file'), this.executePipeline.bind(this))
+        router.post('/test/pipeline/execute', express.json(), checkUserToken(), upload.single('file'), this.testExecutePipeline.bind(this))
 
         return router
     }
