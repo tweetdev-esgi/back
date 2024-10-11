@@ -386,7 +386,7 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
     const codeFileName = `script.${langConfig.extension}`;
     const hostCodeFilePath = path.join(__dirname, codeFileName); 
     const containerCodeFilePath = `/app/${codeFileName}`;
-    const volumeMountPath = `/data/${codeFileName}`;
+    
 
     try {
         await writeCodeToFile(code as string, hostCodeFilePath);
@@ -405,7 +405,13 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
                 console.error(`Error stopping/removing container: ${error.message}`);
             }
         }
-
+    const binds = [`${hostCodeFilePath}:${containerCodeFilePath}`,`my_volume:/data`];
+    if (file) {
+        const fileExtension = path.extname(file.originalname); // e.g., .txt, .jpg, etc.
+        const volumeMountPath = `/data/input${fileExtension}`; // Mount path in container
+        const hostFilePath = path.join(__dirname, 'uploads', file.filename); // Local file path on host
+        binds.push(`${hostFilePath}:${volumeMountPath}`); // Add to Docker volume bindings
+    }
         container = await docker.createContainer({
             Image: langConfig.image,
             name: containerName,
@@ -414,10 +420,10 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
             AttachStderr: true,
             Tty: true,
             HostConfig: {
-                Binds: [`${hostCodeFilePath}:${containerCodeFilePath}`, `my_volume:/data`],
+                Binds: binds,
             },
         });
-
+    
         console.log('Conteneur créé avec succès');
 
         await container.start();
@@ -432,7 +438,7 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
                 const fileName = `output.${outputFileType}`;
                 const containerPath = `/data/${fileName}`;
 
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 200));
 
                 const stream = await container.getArchive({ path: containerPath });
 
@@ -652,9 +658,9 @@ executePipeline = async (req: Request, res: Response): Promise<void> => {
         router.put('/', express.json(), checkUserToken(), checkUserRole(RolesEnums.guest), checkBody(this.paramsUpdateProgram), this.updateProgram.bind(this))
         router.delete('/', checkUserToken(), checkUserRole(RolesEnums.guest), this.deleteProgram.bind(this))
         router.post('/execute', express.json(), checkUserToken(),  upload.single('file'), this.testExecutePipeline.bind(this))
-        router.post('/execute/test', express.json(), checkUserToken(),  upload.single('file'), this.executeProgram.bind(this))
+        router.post('/execute/test', express.json(), checkUserToken(),  upload.single('file'), this.testExecutePipeline.bind(this))
 
-        router.post('/pipeline/execute', express.json(), checkUserToken(), upload.single('file'), this.executePipeline.bind(this))
+        router.post('/pipeline/execute', express.json(), checkUserToken(), upload.single('file'), this.testExecutePipeline.bind(this))
         router.post('/test/pipeline/execute', express.json(), checkUserToken(), upload.single('file'), this.testExecutePipeline.bind(this))
 
         return router
