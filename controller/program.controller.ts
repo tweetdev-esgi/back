@@ -438,7 +438,7 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
                 const fileName = `output.${outputFileType}`;
                 const containerPath = `/data/${fileName}`;
 
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, 1000));
 
                 const stream = await container.getArchive({ path: containerPath });
 
@@ -501,7 +501,7 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
         }
 
         await container.stop();
-        await container.remove();
+        // await container.remove();
         // await container.kill();
         console.log('Conteneur arrêté et supprimé');
 
