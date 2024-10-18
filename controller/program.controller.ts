@@ -438,7 +438,7 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
                 const fileName = `output.${outputFileType}`;
                 const containerPath = `/data/${fileName}`;
 
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 1500));
 
                 const stream = await container.getArchive({ path: containerPath });
 
