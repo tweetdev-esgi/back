@@ -15,7 +15,10 @@ const multer = require('multer')
 
 
 const docker = new Docker();
-const upload = multer({ dest: path.join(__dirname, 'uploads') });
+// Binds are resolved by the Docker host: when the API itself runs in a container,
+// RUNNER_DIR must be a directory mounted at the same path on host and in the container.
+const RUNNER_DIR = process.env.RUNNER_DIR ?? __dirname;
+const upload = multer({ dest: path.join(RUNNER_DIR,'uploads') });
 interface LanguageConfig {
     extension: string;
     image: string;
@@ -276,9 +279,9 @@ executeProgram = async (req: Request, res: Response): Promise<void> => {
 
     const containerName = `code-exec-container-${language}`;
     const codeFileName = `script.${langConfig.extension}`;
-    const hostCodeFilePath = path.join(__dirname, codeFileName);
+    const hostCodeFilePath = path.join(RUNNER_DIR,codeFileName);
     const containerCodeFilePath = `/app/${codeFileName}`;
-    const hostFilePath = file ? path.join(__dirname, 'uploads', file.filename) : undefined;
+    const hostFilePath = file ? path.join(RUNNER_DIR,'uploads', file.filename) : undefined;
     const containerFilePath = file ? `/app/${file.originalname}` : undefined;
 
     try {
@@ -384,7 +387,7 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
 
     const containerName = `code-exec-container-${language}-${Date.now()}`;
     const codeFileName = `script.${langConfig.extension}`;
-    const hostCodeFilePath = path.join(__dirname, codeFileName); 
+    const hostCodeFilePath = path.join(RUNNER_DIR,codeFileName); 
     const containerCodeFilePath = `/app/${codeFileName}`;
     
 
@@ -409,7 +412,7 @@ testExecutePipeline = async (req: Request, res: Response): Promise<void> => {
     if (file) {
         const fileExtension = path.extname(file.originalname); // e.g., .txt, .jpg, etc.
         const volumeMountPath = `/data/input${fileExtension}`; // Mount path in container
-        const hostFilePath = path.join(__dirname, 'uploads', file.filename); // Local file path on host
+        const hostFilePath = path.join(RUNNER_DIR,'uploads', file.filename); // Local file path on host
         binds.push(`${hostFilePath}:${volumeMountPath}`); // Add to Docker volume bindings
     }
         container = await docker.createContainer({
@@ -538,7 +541,7 @@ executePipeline = async (req: Request, res: Response): Promise<void> => {
         // Créez et démarrez le conteneur avec les volumes montés
         const binds = [`${volumeName}:/app`];
         if (file) {
-            const hostFilePath = path.join(__dirname, 'uploads', file.filename);
+            const hostFilePath = path.join(RUNNER_DIR,'uploads', file.filename);
             await writeCodeToFile(code as string, hostFilePath); // Écrire le fichier d'entrée sur l'hôte pour le monter
             binds.push(`${hostFilePath}:${containerFilePath}`);
         }

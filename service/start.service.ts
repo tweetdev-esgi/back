@@ -1,5 +1,5 @@
 import { Document, Types } from "mongoose"
-import { PostModel, Role, RoleModel, UserModel } from "../models"
+import { CommentModel, HubModel, PostModel, Role, RoleModel, UserModel } from "../models"
 import { SecurityUtils } from "../utils"
 import axios from "axios"
 
@@ -14,11 +14,7 @@ export class StartService {
         }   
     
         const rolesNames: string[] = ["admin", "guest"]
-        const rolesRequest = rolesNames.map((name) => {
-            RoleModel.create({
-                name
-            })
-        })
+        const rolesRequest = rolesNames.map((name) => RoleModel.create({ name }))
         await Promise.all(rolesRequest)
     }
 
@@ -31,10 +27,7 @@ export class StartService {
         const roles = await RoleModel.find().exec()
         
         const usersLoginsAndUsernames: any[] = 
-        [{login:"admin@gmail.com",username:"Respons11"},{login:"guest@gmail.com",
-        username:"Respons11"
-        }
-         ]
+        [{login:"admin@gmail.com",username:"admin"},{login:"guest@gmail.com",username:"guest"}]
         
         const usersRequest = usersLoginsAndUsernames.map(async (usersLoginsAndUsernames) => {
             
@@ -66,6 +59,73 @@ export class StartService {
         })
         await Promise.all(usersRequest)
     } 
+
+    // sample data, only when there are no posts yet (password for all: "password")
+    static seed = async (): Promise<void> => {
+        if (await PostModel.count().exec() !== 0) {
+            return
+        }
+
+        const guestRole = await RoleModel.findOne({ name: "guest" }).exec()
+        const usernames = ["alice", "bob", "carol"]
+        for (const username of usernames) {
+            if (await UserModel.exists({ username })) continue
+            await UserModel.create({
+                login: `${username}@gmail.com`,
+                password: SecurityUtils.toSHA512("password"),
+                username,
+                roles: guestRole ? [guestRole] : [],
+                profileImageUrl: `https://i.pravatar.cc/150?u=${username}`,
+                backgroundImageUrl: `https://picsum.photos/seed/${username}/1200/400`,
+                description: `Hello! My name is ${username}`,
+                joinDate: new Date(),
+                followers: [],
+                following: []
+            })
+        }
+
+        const hubs = [
+            { name: "python", description: "Everything Python", admins: ["alice"] },
+            { name: "javascript", description: "JS, TS and Node", admins: ["bob"] }
+        ]
+        for (const hub of hubs) {
+            if (await HubModel.exists({ name: hub.name })) continue
+            await HubModel.create({
+                ...hub,
+                users: usernames,
+                profileImageUrl: `https://picsum.photos/seed/${hub.name}/200/200`,
+                coverImageUrl: `https://picsum.photos/seed/${hub.name}-cover/1200/400`,
+                creationDate: new Date()
+            })
+        }
+
+        const posts = [
+            { username: "alice", hubname: "python", content: "**List comprehensions** are underrated:\n\n```python\nsquares = [x * x for x in range(10)]\n```" },
+            { username: "bob", hubname: "javascript", content: "TIL `Array.prototype.at(-1)` gets the last element. No more `arr[arr.length - 1]`." },
+            { username: "carol", hubname: null, content: markdownContent },
+            { username: "alice", hubname: null, content: "First day on tweetdev, hi everyone!" },
+            { username: "bob", hubname: "python", content: "Coming from JS, what should I learn first in Python?" }
+        ]
+        for (let i = 0; i < posts.length; i++) {
+            const p = posts[i]
+            const others = usernames.filter((u) => u !== p.username)
+            const post = await PostModel.create({
+                ...p,
+                like: others.map((username, emojiIndex) => ({ username, emojiIndex })),
+                comments: [],
+                // spread over the last hours so the feed has an order
+                creationDate: new Date(Date.now() - i * 3600 * 1000),
+                program: null
+            })
+            const comment = await CommentModel.create({
+                description: "Nice one!",
+                username: others[0],
+                postId: post._id,
+                creationDate: new Date()
+            })
+            await PostModel.updateOne({ _id: post._id }, { $push: { comments: comment._id } })
+        }
+    }
 
     static createUser = async (): Promise<void> => {
 

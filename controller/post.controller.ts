@@ -5,7 +5,17 @@ import { Router, Response, Request } from "express"
 import { checkBody, checkUserRole, checkUserToken } from "../middleware"
 import { RolesEnums } from "../enums"
 import { checkQuery } from "../middleware/query.middleware"
-import { CommentModel, HubModel, UserModel } from "../models"
+import { CommentModel, HubModel, Like, ProgramModel, UserModel, WorkflowModel } from "../models"
+
+// ponytail: the front's LikeButton sends posts, programs and workflows to /post/like,
+// so look the id up in all three. Give each its own route if they ever diverge.
+const findLikeable = async (id: unknown): Promise<(Document & { like: Like[] }) | null> => {
+    for (const model of [PostModel, ProgramModel, WorkflowModel] as Model<any>[]) {
+        const doc = await model.findById(id)
+        if (doc) return doc
+    }
+    return null
+}
 
 export class PostController {
 
@@ -101,7 +111,7 @@ export class PostController {
         }
         try {
             
-            const post = await PostModel.findById(req.body.post_id);
+            const post = await findLikeable(req.body.post_id);
             const emojiIndex = req.body.emojiIndex;
             if (!post) {
                 res.status(404).json({ "message": "Post not found" });
@@ -281,7 +291,7 @@ export class PostController {
             return;
         }
         try {
-            const post = await PostModel.findById(post_id);
+            const post = await findLikeable(post_id);
             if (!post) {
                 res.status(404).json({ "message": "Post not found" });
                 return;

@@ -48,6 +48,7 @@ const startServer = async (): Promise<void> => {
     const commentController = new CommentController()
 
     await StartService.createUsers()
+    await StartService.seed()
 
     // await StartService.createUser()
     app.use(userController.path, userController.buildRouter())
